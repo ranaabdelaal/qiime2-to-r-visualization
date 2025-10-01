@@ -51,6 +51,7 @@ Taxa_barplots/    # Phylum, Genus, Species relative abundance plots
 Ancom_bc/         # Differential abundance analysis scripts
 
 Differential_pathways/  # Pathway differential abundance scripts
+
 README.md         # Documentation (this file)
 
 
