@@ -1,0 +1,141 @@
+---
+title: "ancom-bc in R"
+output: html_notebook
+---
+
+```{r}
+# --- Install and Load Required Libraries ---
+required_packages <- c("tidyverse", "phyloseq", "qiime2R")
+
+for (pkg in required_packages) {
+  if (!requireNamespace(pkg, quietly = TRUE)) install.packages(pkg)
+  library(pkg, character.only = TRUE)
+}
+
+```
+
+```{r}
+# 1. DATA LOADING & PREP
+
+# Load and rename feature tables
+lfc <- read_csv("path/to/your_lfc_file.csv") %>% rename(feature_id = id)
+qval <- read_csv("path/to/your_qval_file.csv") %>% rename(feature_id = id)
+
+```
+
+```{r}
+# Merge statistics
+final_results <- lfc %>%
+  pivot_longer(-feature_id, names_to = "group", values_to = "log2FC") %>%
+  left_join(
+    qval %>% 
+      pivot_longer(-feature_id, names_to = "group", values_to = "q_val"),
+    by = c("feature_id", "group")
+  ) %>%
+  filter(
+    q_val < 0.05  
+  )
+
+# Load and clean taxonomy
+taxonomy <- read_qza("path/to/your_taxonomy.qza")$data %>%
+  separate("Taxon", into = c("Kingdom", "Phylum", "Class", "Order", 
+                             "Family", "Genus", "Species"), sep = ";") %>%
+  mutate(across(everything(), ~str_replace(., "[a-z]__", "")))
+
+# Merge with taxonomy
+final_results <- final_results %>%
+  left_join(taxonomy, by = c("feature_id" = "Feature.ID"))
+
+```
+
+```{r}
+# 2. DATA VERIFICATION
+# Confirm number of significant features generated through qiime2 pipeline 
+cat("Significant taxa:", nrow(final_results), "\n")
+
+```
+
+```{r}
+# 3. TAXONOMY LABELING
+# Create detailed taxonomy labels (all available levels)
+final_results <- final_results %>%
+  mutate(
+    DetailedTaxonomy = pmap_chr(
+      list(Kingdom, Phylum, Class, Order, Family, Genus, Species),
+      function(...) {
+        taxa <- c(...)
+        taxa <- taxa[!is.na(taxa) & taxa != ""]
+        paste(taxa, collapse = " | ")
+      }
+    ),
+    Direction = ifelse(log2FC > 0, "Enriched in group1", "Depleted in group1")
+  )
+
+```
+
+```{r}
+# 4. PLOTTING (Genus + Species only, large bold text)
+library(ggplot2)
+library(dplyr)
+library(purrr)
+library(stringr)
+
+# Check raw counts
+cat("Total features in final_results:", nrow(final_results), "\n")
+
+# Build simplified taxonomy labels (Genus + Species + ASV ID)
+final_results <- final_results %>%
+  mutate(
+    SimpleTaxonomy = paste0(
+      ifelse(!is.na(Genus), Genus, "Unclassified"),
+      ifelse(!is.na(Species), paste0(" ", Species), ""),
+      " (", feature_id, ")"
+    ),
+    Direction = ifelse(log2FC > 0, "Enriched in group1", "Depleted in group1")
+  )
+
+ggplot(final_results, 
+       aes(x = reorder(SimpleTaxonomy, log2FC), 
+           y = log2FC,
+           fill = Direction)) +
+  
+  geom_col(width = 0.9, alpha = 0.8) +
+  coord_flip() +
+  
+  scale_fill_manual(
+    values = c("Enriched in group1" = "#1953A6", 
+               "Depleted in group1" = "#FFA800")
+  ) +
+  
+  geom_text(
+    aes(label = sprintf("%.1f", log2FC)),
+    size = 8,  # larger value labels
+    fontface = "bold",
+    hjust = ifelse(final_results$log2FC > 0, -0.2, 1.2)
+  ) +
+  
+  theme_minimal() +
+  theme(
+    axis.text.y = element_text(size = 20, face = "bold"),   # larger, bold y-axis labels
+    axis.text.x = element_text(size = 20, face = "bold"),   # larger, bold x-axis labels
+    axis.title = element_text(size = 22, face = "bold"),    # bold axis titles
+    legend.text = element_text(size = 20, face = "bold"),   # bold legend text
+    legend.title = element_text(size = 22, face = "bold"),  # bold legend title
+    legend.position = "top",
+    panel.grid.major.y = element_blank(),
+    plot.margin = margin(1, 1, 1, 4, "cm"),                 # more space for labels
+    plot.background = element_rect(fill = "white", color = NA),
+    plot.title = element_text(size = 26, face = "bold"),    # bold, larger title
+    plot.subtitle = element_text(size = 22, face = "bold")  # bold, larger subtitle
+  ) +
+  labs(
+    x = "Genus, Species, and ASV ID",
+    y = "log2 Fold Change (group1 vs group2)",
+    title = "Differentially Abundant Taxa",
+    subtitle = "Genus + Species + ASV"
+  )
+
+ggsave("differential_taxa_plot.png", width = 26, height = 14, dpi = 300, bg = "white")
+
+```
+

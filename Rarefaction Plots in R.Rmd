@@ -1,0 +1,121 @@
+---
+title: "Rarefaction Plots in R"
+output: html_notebook
+---
+
+```{r}
+# --- Load Necessary Libraries ---
+if (!requireNamespace("tidyverse", quietly = TRUE)) {
+  install.packages("tidyverse")
+}
+library(tidyverse)
+
+```
+
+```{r}
+# --- Import Rarefaction Data ---
+
+# Read the rarefaction CSV file exported from QIIME2
+rarefaction_data <- readr::read_csv("observed_features.csv")
+
+# Inspect structure of the dataset
+str(rarefaction_data)
+
+```
+
+```{r}
+# --- Reshape Rarefaction Data to Long Format ---
+
+# Convert from wide to long format for plotting
+rarefaction_long <- rarefaction_data %>%
+  pivot_longer(
+    cols = starts_with("depth"),  # All columns corresponding to rarefaction depths
+    names_to = "rarefaction_depth",
+    values_to = "observed_features"
+  )
+
+# Inspect unique values in rarefaction_depth to verify reshaping
+unique(rarefaction_long$rarefaction_depth)
+
+```
+
+```{r}
+# --- Clean Rarefaction Depth Column and Filter Data ---
+
+rarefaction_long <- rarefaction_long %>%
+  # Remove "depth." or iteration suffix from the column name and convert to numeric
+  mutate(
+    rarefaction_depth = as.numeric(gsub("depth\\.|_iter.*", "", rarefaction_depth))
+  ) %>%
+  # Remove rows with NA in observed_features
+  filter(!is.na(observed_features))
+
+# Inspect the cleaned and reshaped data
+head(rarefaction_long)
+
+```
+
+```{r}
+# --- Load Libraries for Plotting ---
+if (!requireNamespace("RColorBrewer", quietly = TRUE)) install.packages("RColorBrewer")
+library(RColorBrewer)
+library(ggplot2)
+
+# --- Define a Generic Color Palette ---
+# Automatically assign colors to groups
+group_levels <- unique(rarefaction_long$group)
+group_colors <- RColorBrewer::brewer.pal(n = length(group_levels), "Set1")
+names(group_colors) <- group_levels
+
+# --- Plot Rarefaction Curves ---
+rarefaction_plot <- ggplot(rarefaction_long, aes(
+    x = rarefaction_depth,
+    y = observed_features,
+    group = sample.id,
+    color = group
+  )) +
+  geom_line(alpha = 0.7) +                     # Line transparency
+  geom_point(size = 2) +                       # Points at each depth
+  scale_color_manual(values = group_colors) +  # Apply color palette
+  labs(
+    title = "Rarefaction Curves",
+    x = "Rarefaction Depth",
+    y = "Observed Features",
+    color = "Group"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title      = element_text(face = "bold", hjust = 0.5, color = "black"),
+    axis.text.x     = element_text(face = "bold", color = "black"),
+    axis.text.y     = element_text(face = "bold", color = "black"),
+    legend.position = "top",
+    legend.title    = element_text(face = "bold", color = "black"),
+    legend.text     = element_text(color = "black"),
+    panel.grid.major = element_line(color = "grey90"),
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background  = element_rect(fill = "white", color = NA)
+  )
+
+# Print the plot
+print(rarefaction_plot)
+
+# --- Save High-Resolution Plot ---
+ggsave(
+  filename = "rarefaction_curves_group.png",
+  plot = rarefaction_plot,
+  width = 8,
+  height = 6,
+  dpi = 600
+)
+
+```
+
+```{r}
+# Note:
+# The same workflow can be applied for rarefaction curves based on 
+# other alpha diversity metrics, such as Shannon Entropy. 
+# Simply replace the input CSV file with the corresponding metric 
+# exported from QIIME2, and rerun the code.
+
+```
+

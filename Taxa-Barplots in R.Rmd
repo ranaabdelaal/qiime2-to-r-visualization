@@ -1,0 +1,280 @@
+---
+title: "Taxa-Barplots in R"
+output: html_notebook
+---
+
+```{r}
+# --- Install and Load Required Libraries ---
+required_packages <- c("tidyr", "qiime2R", "phyloseq", "dplyr", "ggplot2")
+
+for (pkg in required_packages) {
+  if (!requireNamespace(pkg, quietly = TRUE)) install.packages(pkg)
+  library(pkg, character.only = TRUE)
+}
+```
+
+```{r}
+# --- Import QIIME2 Data into Phyloseq ---
+# Replace the file paths with your own .qza and metadata files
+physeq <- qiime2R::qza_to_phyloseq(
+  features = "path/to/table_2k.qza",
+  taxonomy = "path/to/taxonomy.qza",
+  metadata = "path/to/sample-metadata.tsv"
+)
+
+# Print a summary of the phyloseq object
+physeq
+
+```
+
+```{r}
+# --- Aggregate Phyloseq Data at Different Taxonomic Levels ---
+
+# Aggregate at Phylum level
+physeq_phylum <- physeq %>%
+  tax_glom(taxrank = "Phylum") %>%                  # Collapse taxa at Phylum
+  transform_sample_counts(function(x) x / sum(x)) %>%  # Convert counts to relative abundance
+  psmelt()                                         # Melt to long format for ggplot
+
+# Aggregate at Genus level
+physeq_genus <- physeq %>%
+  tax_glom(taxrank = "Genus") %>%
+  transform_sample_counts(function(x) x / sum(x)) %>%
+  psmelt()
+
+# Aggregate at Species level and clean names
+physeq_species <- physeq %>%
+  tax_glom(taxrank = "Species") %>%
+  transform_sample_counts(function(x) x / sum(x)) %>%
+  psmelt() %>%
+  mutate(Species = gsub("s__", "", Species))  # Remove "s__" prefix from species names
+
+# --- Function to Extract Top N Taxa by Mean Abundance ---
+get_top_taxa <- function(data, tax_level, n = 5) {
+  data %>%
+    group_by(across(all_of(tax_level))) %>%
+    summarise(mean_abund = mean(Abundance, na.rm = TRUE)) %>%
+    arrange(desc(mean_abund)) %>%
+    slice_head(n = n) %>%
+    pull(!!sym(tax_level))
+}
+
+# Get top taxa at each level
+top_phyla   <- get_top_taxa(physeq_phylum, "Phylum")
+top_genera  <- get_top_taxa(physeq_genus, "Genus")
+top_species <- get_top_taxa(physeq_species, "Species")
+
+# Print top taxa for verification
+print(list(
+  Phylum  = top_phyla,
+  Genus   = top_genera,
+  Species = top_species
+))
+
+```
+
+```{r}
+# --- Function to Plot Top Taxa Barplots ---
+
+create_taxa_plot <- function(data, top_taxa, tax_level, palette = "Accent") {
+  
+  # Prepare plot data
+  plot_data <- data %>%
+    mutate(
+      Taxon = ifelse(get(tax_level) %in% top_taxa, as.character(get(tax_level)), "Other"),
+      Taxon = factor(Taxon, levels = c(top_taxa, "Other"))
+    ) %>%
+    group_by(Taxon) %>%
+    mutate(mean_abund = mean(Abundance, na.rm = TRUE)) %>%
+    ungroup() %>%
+    group_by(Taxon) %>%
+    mutate(percent = round(mean(Abundance) * 100, 1)) %>%
+    ungroup() %>%
+    mutate(
+      Taxon_with_pct = ifelse(
+        Taxon == "Other", 
+        "Other", 
+        paste0(Taxon, " (", percent, "%)")
+      ),
+      Taxon_with_pct = factor(Taxon_with_pct, 
+                              levels = unique(Taxon_with_pct[order(-mean_abund)]))
+    )
+  
+  # Create stacked bar plot
+  ggplot(plot_data, aes(x = Sample, y = Abundance, fill = Taxon_with_pct)) +
+    geom_bar(stat = "identity", position = "fill") +
+    scale_fill_brewer(palette = palette, name = paste(tax_level, "(Mean % Abundance)")) +
+    facet_grid(~group, scales = "free_x", space = "free") +
+    labs(
+      x = "", 
+      y = "Relative Abundance", 
+      title = paste("Top 5 Most Abundant", tax_level)
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text.x     = element_blank(),
+      axis.ticks.x    = element_blank(),
+      panel.spacing   = unit(0.1, "lines"),
+      strip.text      = element_text(size = 10, face = "bold"),
+      legend.position = "right",
+      legend.text     = element_text(size = ifelse(tax_level == "Species", 7, 8))
+    )
+}
+
+# --- Generate and Save Example Plot for Phylum Level ---
+
+phylum_plot <- create_taxa_plot(physeq_phylum, top_phyla, "Phylum")
+
+# Display the plot
+print(phylum_plot)
+
+# Save high-resolution PNG
+ggsave(
+  filename = "phylum_plot_group.png",
+  plot     = phylum_plot,
+  device   = "png",
+  width    = 10,
+  height   = 6,
+  dpi      = 300,
+  bg       = "white"
+)
+
+```
+
+```{r}
+# Generate Genus-level plot
+genus_plot <- create_taxa_plot(physeq_genus, top_genera, "Genus")
+print(genus_plot)
+ggsave(
+  "genus_plot_group.png", 
+  plot = genus_plot, 
+  device = "png", 
+  width = 10, 
+  height = 6, 
+  dpi = 300, 
+  bg = "white"
+)
+
+```
+
+```{r}
+# Generate Species-level plot
+species_plot <- create_taxa_plot(physeq_species, top_species, "Species")
+print(species_plot)
+ggsave(
+  "species_plot_group.png", 
+  plot = species_plot, 
+  device = "png", 
+  width = 12, 
+  height = 6, 
+  dpi = 300, 
+  bg = "white"
+)
+
+```
+
+```{r}
+# --- Filter for Genus-Species Combinations of Interest ---
+
+# Define a vector of keywords to search for (case-insensitive)
+keywords <- c("keyword1", "keyword2", "keyword3")  # Replace with your bacteria of interest
+
+# Combine keywords into a single regex pattern
+pattern <- paste(keywords, collapse = "|")
+
+# Filter physeq_species for matching Genus-Species combinations
+physeq_species %>%
+  filter(grepl(pattern, paste(Genus, Species), ignore.case = TRUE)) %>%
+  select(Genus, Species) %>%
+  distinct() %>%
+  print()
+
+```
+
+```{r}
+# --- Calculate Relative Abundance for Bacteria of Interest ---
+
+# Define keywords for bacteria of interest
+keywords <- c("keyword1", "keyword2", "keyword3")  # Replace with your target genera/species
+
+# Combine keywords into a single regex pattern
+pattern <- paste(keywords, collapse = "|")
+
+# Recalculate relative abundance per sample, then average by group
+bacteria_abundance <- physeq_species %>%
+  filter(grepl(pattern, paste(Genus, Species), ignore.case = TRUE)) %>%
+  group_by(Sample, group) %>%
+  summarise(rel_abund = sum(Abundance), .groups = "drop") %>%  # Sum if multiple hits per sample
+  group_by(group) %>%
+  summarise(
+    mean_abundance = mean(rel_abund) * 100,
+    sd_abundance   = sd(rel_abund) * 100,
+    .groups = "drop"
+  )
+
+# View results
+print(bacteria_abundance)
+
+```
+
+```{r}
+# --- Create Bar Plot for Bacteria of Interest ---
+
+# Use the generic abundance table
+bacteria_barplot <- ggplot(bacteria_abundance, 
+                           aes(x = group, y = mean_abundance, fill = group)) +
+  geom_bar(stat = "identity", width = 0.7, alpha = 0.9) +
+  geom_errorbar(aes(ymin = mean_abundance - sd_abundance, 
+                    ymax = mean_abundance + sd_abundance),
+                width = 0.2, color = "black") +
+  geom_text(aes(label = sprintf("%.1f%%", mean_abundance)),
+            vjust = -1.2, size = 4, color = "black") +
+  labs(
+    title = "Mean Abundance of Selected Bacteria by Group",
+    y = "Relative Abundance (%)",
+    x = "Group",
+    fill = "Group"
+  ) +
+  scale_fill_brewer(palette = "Set2") +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  theme_minimal() +
+  theme(
+    legend.position = "right",
+    plot.title       = element_text(hjust = 0.5, face = "bold"),
+    axis.title       = element_text(face = "bold"),
+    panel.grid.major.x = element_blank()
+  )
+
+# Print the plot
+print(bacteria_barplot)
+
+# Save high-resolution plot
+ggsave(
+  filename = "bacteria_abundance_by_group.png",
+  plot     = bacteria_barplot,
+  width    = 7,
+  height   = 5,
+  dpi      = 300,
+  bg       = "white"
+)
+
+```
+
+```{r}
+# --- Prepare Per-Sample Data for Bacteria of Interest ---
+
+# Define keywords for bacteria of interest
+keywords <- c("keyword1", "keyword2", "keyword3")  # Replace with your target genera/species
+pattern <- paste(keywords, collapse = "|")
+
+# Prepare per-sample relative abundance data
+bacteria_samples <- physeq_species %>%
+  filter(grepl(pattern, paste(Genus, Species), ignore.case = TRUE)) %>%
+  group_by(Sample, group) %>%
+  summarise(rel_abund = sum(Abundance), .groups = "drop")
+
+# Perform Wilcoxon test between groups
+wilcox.test(rel_abund ~ group, data = bacteria_samples)
+
+```
+

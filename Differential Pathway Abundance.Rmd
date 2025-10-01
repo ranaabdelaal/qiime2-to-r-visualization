@@ -1,0 +1,76 @@
+---
+title: "Picrust in R"
+output: html_notebook
+---
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+# Read in the LFC and q-values CSVs
+lfc_df <- read.csv("path/to/your_lfc_file.csv", stringsAsFactors = FALSE)
+qvals_df <- read.csv("path/to/your_qval_file.csv", stringsAsFactors = FALSE)
+
+# Merge using "id" as the key
+diff_df <- inner_join(lfc_df, qvals_df, by = "id", suffix = c("_lfc", "_q"))
+
+# Optional: Rename the ID column for clarity
+colnames(diff_df)[1] <- "feature-id"
+
+# Read in the pathway info file
+pathway_info <- read.delim("path/to/your_pathway_info.txt", header = FALSE, sep = "\t",
+                           stringsAsFactors = FALSE,
+                           col.names = c("feature_id", "pathway_description"))
+
+# Merge with pathway descriptions
+merged_df <- diff_df %>%
+  left_join(pathway_info, by = c("feature-id" = "feature_id"))
+
+# Save to CSV
+write.csv(merged_df, "merged_pathway_differentials.csv", row.names = FALSE)
+
+# Preview first few rows
+head(merged_df)
+
+```
+
+```{r}
+# Filter merged results for significant features, add comparison label, and select relevant columns
+sig_comparison <- merged_df %>%
+  filter(q_value_column < 0.001) %>%  # Replace 'q_value_column' with your desired q-value column
+  mutate(group = "group1 vs group2") %>%
+  select(feature.id = `feature-id`, 
+         lfc = lfc_column,         # Replace 'lfc_column' with your LFC column
+         q = q_value_column,       # Replace 'q_value_column' with your q-value column
+         group, 
+         pathway_description)
+
+
+```
+
+```{r}
+# Prepare data for plotting (only one group contrast in this case)
+sig_combined <- sig_acne_m_vs_auc
+
+# Reorder factor for plotting
+sig_combined <- sig_combined %>%
+  arrange(desc(lfc)) %>%
+  mutate(pathway_description = factor(pathway_description, levels = unique(pathway_description)))
+
+# Plot
+ggplot(sig_combined, aes(x = pathway_description, y = lfc, fill = group)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  coord_flip() +
+  labs(title = "Significantly Differential Pathways (acne-m vs acne-auc)",
+       x = "Pathway",
+       y = "Log Fold Change (LFC)",
+       fill = "Group") +
+  theme_minimal(base_size = 12)
+
+# Save plot
+ggsave("group_pathways_plot.png", 
+       width = 12, height = 20, dpi = 300, 
+       bg = "white")
+
+```
+
