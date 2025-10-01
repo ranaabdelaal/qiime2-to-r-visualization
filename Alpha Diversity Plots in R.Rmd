@@ -1,0 +1,144 @@
+---
+title: "Alpha Diversity Plots in R"
+output: html_notebook
+---
+
+```{r}
+# Set your own working directory here:
+setwd("path/to/your/folder")
+getwd()
+```
+
+```{r}
+# ---- Install and Load Packages ----
+# Install and load necessary packages if you haven't already
+if (!requireNamespace("tidyverse", quietly = TRUE)) {
+  install.packages("tidyverse")
+}
+library(tidyverse)
+
+```
+
+```{r}
+# ---- Faith's PD Alpha Diversity ----
+
+# Read the exported Faith's PD data
+# Set your own path to the exported alpha-diversity file here
+faith_pd_df <- read_tsv("path/to/exported_faith_pd/alpha-diversity.tsv")
+
+# Rename the first column (commonly exported as '...1') to 'Sample-Id'
+faith_pd_df <- faith_pd_df %>%
+  rename_with(~ "Sample-Id", .cols = "...1")
+
+# Print column names to verify successful renaming
+print("Column names in faith_pd_df after renaming:")
+print(colnames(faith_pd_df))
+
+```
+
+```{r}
+# ---- Metadata ----
+
+# Read your metadata file
+# Set your own path to the metadata file here
+metadata <- read_tsv("path/to/sample-metadata.tsv")
+
+# Print column names to verify successful import
+print("Column names in metadata:")
+print(colnames(metadata))
+
+```
+
+```{r}
+# ---- Merge Alpha Diversity with Metadata ----
+
+# Merge Faith's PD values with metadata based on Sample-Id
+merged_df <- faith_pd_df %>%
+  inner_join(metadata, by = "Sample-Id")
+
+# Preview the merged dataframe
+print("First few rows of merged data:")
+print(head(merged_df))
+
+```
+
+```{r}
+# ---- Summary Statistics and Pairwise Tests ----
+
+# Load required package
+if (!requireNamespace("dplyr", quietly = TRUE)) install.packages("dplyr")
+library(dplyr)
+
+# Calculate mean and standard deviation of Faith's PD for each group
+# Replace 'group' and 'faith_pd' with the appropriate column names in your dataset
+summary_stats <- merged_df %>%
+  group_by(group) %>%
+  summarise(
+    mean_faith_pd = mean(faith_pd, na.rm = TRUE),
+    sd_faith_pd = sd(faith_pd, na.rm = TRUE)
+  )
+
+# Print the summary statistics (mean ± SD)
+print("Summary statistics (mean ± SD) of Faith's PD by group:")
+print(summary_stats)
+
+# Perform pairwise Wilcoxon rank-sum tests with Benjamini-Hochberg (BH) adjustment
+pairwise_results <- pairwise.wilcox.test(
+  x = merged_df$faith_pd,
+  g = merged_df$group,
+  p.adjust.method = "BH"
+)
+
+# Print adjusted p-values for pairwise comparisons
+print("Pairwise Wilcoxon test (BH-adjusted p-values):")
+print(pairwise_results$p.value)
+
+```
+
+```{r}
+# ---- Faith's PD Boxplot ----
+
+# Load required packages
+if (!requireNamespace("ggplot2", quietly = TRUE)) install.packages("ggplot2")
+if (!requireNamespace("ggpubr", quietly = TRUE)) install.packages("ggpubr")
+library(ggplot2)
+library(ggpubr)
+
+# Create the boxplot with significance markers
+# Replace 'group' and 'faith_pd' with the actual column names in your dataset
+faith_pd_boxplot <- ggplot(merged_df, aes(x = group, y = faith_pd, fill = group)) +
+  geom_boxplot() +
+  theme_classic() +
+  labs(x = "Group", y = "Faith's Phylogenetic Diversity") +
+  theme(axis.text.x = element_text(angle = -90, hjust = 1)) +
+  scale_fill_manual(values = c("#FF69B4", "#FF8C00")) + # Example colors
+  stat_compare_means(
+    comparisons = list(unique(as.character(merged_df$group))), # Update if more than 2 groups
+    method = "wilcox.test",
+    label = "p.signif",
+    symnum.args = list(
+      cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1),
+      symbols = c("****", "***", "**", "*", "ns")
+    ),
+    tip.length = 0,
+    vjust = 0.5
+  )
+
+# Print the plot
+print(faith_pd_boxplot)
+
+# Save the plot (set your own output path here)
+ggsave("path/to/output/faith_pd_boxplot.png", 
+       plot = faith_pd_boxplot, width = 8, height = 6, dpi = 300)
+
+```
+
+```{r}
+# ---- Note ----
+# The same workflow can be applied to other alpha diversity metrics 
+# exported from QIIME2 (e.g., Observed Features, Shannon Entropy, Pielou's Evenness).
+# Simply replace 'faith_pd' in the code with the corresponding column name 
+# from your alpha diversity file.
+
+```
+
