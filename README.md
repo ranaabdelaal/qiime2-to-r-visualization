@@ -34,4 +34,4 @@ The script automatically installs missing packages when first run.
 
 1. **Clone this repository**:
    ```bash
-   git clone https://github.com/ranaabdelaal/alpha-diversity-visualization.git
+   git clone https://github.com/ranaabdelaal/qiime2-to-r-visualization.git
