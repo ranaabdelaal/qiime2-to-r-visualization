@@ -40,13 +40,20 @@ The scripts assume that users have already run QIIME2 and exported the `.qza` fi
 ---
 
 ## Repository Structure
-├── alpha_diversity/ # R Markdown and scripts for alpha diversity/
-├── beta_diversity/ # R Markdown and scripts for beta diversity/
-├── rarefaction/ # Rarefaction curve scripts/
-├── taxa_barplots/ # Phylum, Genus, Species relative abundance plots/
-├── ancom_bc/ # Differential abundance analysis scripts/
-├── differential_pathways/ # Pathway differential abundance scripts/
-├── README.md # Documentation (this file)
+├── alpha_diversity/  # R Markdown and scripts for alpha diversity
+
+├── beta_diversity/   # R Markdown and scripts for beta diversity
+
+├── rarefaction/      # Rarefaction curve scripts
+
+├── taxa_barplots/    # Phylum, Genus, Species relative abundance plots
+
+├── ancom_bc/         # Differential abundance analysis scripts
+
+├── differential_pathways/  # Pathway differential abundance scripts
+
+├── README.md         # Documentation (this file)
+
 
 
 ---
